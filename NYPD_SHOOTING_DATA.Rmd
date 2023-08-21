@@ -1,0 +1,162 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "T.M"
+date: "2023-08-21"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+* According to NYC Open data, this data is a breakdown of every shooting incident that occurred in NYC from 2006 to the end of the previous calendar year.
+
+* This paper will describe the steps to load data, perform a simple analysis, and build a simple model.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1.import libraries
+
+* First, import the libraries to be used in this R program.
+
+```{r import libraries}
+library("tidyverse")
+library("lubridate")
+```
+
+
+## 2.load data
+
+* Next, download the data directly from the city of new york website and check the contents of the data.
+
+```{r load_data}
+
+# load the data
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+df <- read_csv(url)
+
+# check the data
+summary(df)
+head(df,10)
+colnames(df)
+```
+
+## 3. tidy data
+
+* Then, drop unnecessary columns and check missing values.
+
+```{r tidy_data}
+
+# eliminate data which is not needed
+df <- df %>% select(
+  INCIDENT_KEY,
+  OCCUR_DATE,
+  OCCUR_TIME,
+  BORO,
+  LOC_OF_OCCUR_DESC,
+  LOC_CLASSFCTN_DESC,
+  LOCATION_DESC,
+  STATISTICAL_MURDER_FLAG,
+  PERP_AGE_GROUP,
+  PERP_SEX,
+  PERP_RACE,
+  VIC_AGE_GROUP,
+  VIC_SEX,
+  VIC_RACE,
+  Latitude,
+  Longitude
+)
+
+# check missing values
+missing_values <- df %>%
+  summarise_all(function(x) sum(is.na(x)))
+print(missing_values)
+```
+## 4. Visualization and Analysis
+
+* Narrow down to important attributes and tabulate. Then, visualize them.
+
+```{r Visualization and Analysis}
+# aggregate data
+boro_summary <- df %>%
+  group_by(BORO) %>%
+  summarise(count = n()) %>%
+  filter(count > 1)
+
+# plot bar chart
+boro_plot <- ggplot(boro_summary, aes(x = BORO, y = count)) +
+  geom_bar(stat = "identity") + 
+  labs(title = "NUMBER OF INCIDENTS BY BORO",
+       x = "BORO",
+       y = "NUMBER OF INCIDENTS") +
+  theme_minimal()
+
+print(boro_plot)
+
+# aggregate data
+age_summary <- df %>%
+  group_by(VIC_AGE_GROUP) %>%
+  summarise(count = n()) %>%
+  filter(count > 1)
+
+# plot bar chart
+age_plot <- ggplot(age_summary, aes(x = VIC_AGE_GROUP, y = count)) +
+  geom_bar(stat = "identity") + 
+  labs(title = "NUMBER OF INCIDENTS BY VIC_AGE_GROUP",
+       x = "VIC_AGE_GROUP",
+       y = "NUMBER OF INCIDENTS") +
+  theme_minimal()
+
+print(age_plot)
+
+
+# aggregate data
+sex_summary <- df %>%
+  group_by(VIC_SEX) %>%
+  summarise(count = n()) %>%
+  filter(count > 1)
+
+# plot bar chart
+sex_plot <- ggplot(sex_summary, aes(x = VIC_SEX, y = count)) +
+  geom_bar(stat = "identity") + 
+  labs(title = "NUMBER OF INCIDENTS BY VIC_SEX",
+       x = "VIC_SEX",
+       y = "NUMBER OF INCIDENTS") +
+  theme_minimal()
+
+print(sex_plot)
+```
+The visualization revealed the following;
+
+  * Incidents are more than 20% higher in Brooklyn than in the Bronx
+  * The volume zone for age is 18 to 44. It drops off dramatically for those over 45.
+  * The majority of incidents by gender are male.
+
+## 5. Modeling
+
+* Model the impact on STATISTICAL_MURDER_FLAG using key variables.
+
+```{r modeling}
+df_filtered <- df %>%
+  filter(!is.na(STATISTICAL_MURDER_FLAG),
+         !is.na(BORO),
+         !is.na(VIC_AGE_GROUP),
+         !is.na(VIC_SEX)) %>%
+  select(STATISTICAL_MURDER_FLAG, BORO, VIC_AGE_GROUP, VIC_SEX)
+
+dummy_data <- model.matrix(~ BORO + VIC_AGE_GROUP + VIC_SEX - 1, data = df_filtered)
+
+df_combined <- as.data.frame(dummy_data) %>%
+  bind_cols(df_filtered["STATISTICAL_MURDER_FLAG"])
+
+model <- lm(STATISTICAL_MURDER_FLAG ~ ., data = df_combined)
+
+summary(model)
+```
+
+* Variables that can be utilized when considering P-values are BOROMANHATTAN and VIC_AGE_GROUP.
+* BORO = Manhattan has a negative effect on STATISTICAL_MURDER_FLAG, while VIC_AGE_GROUP seems to have a positive effect as one gets older.
+
+
+# Comment
+At first, I thought that the younger one was, the higher the risk, and that a higher STATISTICAL_MURDER_FLAG indicated increased danger. I also believed that there were more incidents in the Bronx than in Brooklyn. However, I realized that this was on a bias.
